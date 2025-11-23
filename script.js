@@ -1,8 +1,8 @@
 // ==============================================================
-// COMPLETE SCRIPT.JS (AUTHENTICATION, ENCRYPTION, CHAT LOGIC)
+// TRIAL VERSION SCRIPT.JS (STABLE SPARK PLAN VERSION)
 // ==============================================================
 
-// --- GLOBAL VARIABLES & ELEMENT REFERENCES ---
+// --- GLOBAL VARIABLES & ELEMENT REFERENCES (Same as before) ---
 const setupScreen = document.getElementById('setup-screen');
 const chatScreen = document.getElementById('chat-screen');
 const registerButton = document.getElementById('register-button');
@@ -23,21 +23,25 @@ const sendButton = document.getElementById('send-button');
 const displayMyLang = document.getElementById('display-my-lang');
 const messagesContainer = document.getElementById('messages-container');
 
-// Global variables for user data and chat state
+// Business screen elements (assuming they are in index.html)
+const businessSetupScreen = document.getElementById('business-setup-screen');
+const saveCatalogueButton = document.getElementById('save-catalogue-button');
+const catalogueTextInput = document.getElementById('catalogue-text-input');
+
 let currentUserID = null;
 let currentMyLanguage = null;
 let currentChatId = null; 
-let unsubscribeFromChat = null; // Function to stop listening to the chat
+let unsubscribeFromChat = null;
+let currentPartnerLanguage = null; 
+let currentUserType = null; 
 
 // --- SECURITY (Encryption using Crypto-JS) ---
-// Simple shared key for the MVP. This must be replaced with a secure key exchange later.
 const ENCRYPTION_SECRET = "speakly_super_secure_key_123"; 
 
 function encryptMessage(message) {
     if (!message) return null;
     try {
         const encrypted = CryptoJS.AES.encrypt(message, ENCRYPTION_SECRET).toString();
-        // We prepend 'E_' so we know this message is encrypted.
         return 'E_' + encrypted; 
     } catch (e) {
         console.error("Encryption failed:", e);
@@ -47,7 +51,7 @@ function encryptMessage(message) {
 
 function decryptMessage(encryptedMessage) {
     if (!encryptedMessage || !encryptedMessage.startsWith('E_')) {
-        return encryptedMessage; // Not encrypted, return as is
+        return encryptedMessage;
     }
     const cipherText = encryptedMessage.substring(2);
     try {
@@ -59,7 +63,7 @@ function decryptMessage(encryptedMessage) {
     }
 }
 
-// --- CORE UI/DATA FUNCTIONS ---
+// --- CORE UI/DATA FUNCTIONS (Chat and Display Logic) ---
 
 function validateSetup() {
     const userType = userTypeSelect.value;
@@ -74,25 +78,31 @@ function validateSetup() {
     return { email, password, userType, myLanguage };
 }
 
-function switchToChatScreen(lang) {
+function checkUserTypeAndSwitchScreen(lang, type) {
     currentMyLanguage = lang;
+    currentUserType = type;
     displayMyLang.textContent = lang;
-    
-    // UI Switch
     setupScreen.style.display = 'none';
-    chatScreen.style.display = 'flex'; 
 
-    // Enable chat elements
-    chatInput.disabled = false;
-    sendButton.disabled = false;
-    chatInput.focus();
-    
-    console.log(`Chat screen activated for user speaking ${lang}.`);
+    if (type === 'business') {
+        chatScreen.style.display = 'none';
+        businessSetupScreen.style.display = 'flex';
+        console.log(`Business user logged in. Redirecting to Catalogue Setup.`);
+        db.collection('catalogues').doc(currentUserID).get().then(doc => {
+            if (doc.exists) {
+                catalogueTextInput.value = doc.data().text || '';
+            }
+        });
+    } else {
+        businessSetupScreen.style.display = 'none';
+        chatScreen.style.display = 'flex'; 
+        chatInput.disabled = false;
+        sendButton.disabled = false;
+        chatInput.focus();
+        console.log(`Individual user logged in. Switching to Chat Screen.`);
+    }
 }
 
-/**
- * Handles toggling the visibility of the new chat search input.
- */
 function toggleNewChatInput() {
     const isHidden = newChatContainer.style.display === 'none';
     newChatContainer.style.display = isHidden ? 'flex' : 'none';
@@ -101,66 +111,90 @@ function toggleNewChatInput() {
     }
 }
 
-/**
- * CORE LOGIC: Starts listening for new messages in the currently active chat.
- */
 function listenToChat(chatId) {
     if (unsubscribeFromChat) {
-        unsubscribeFromChat(); // Stop listening to previous chat
+        unsubscribeFromChat();
         unsubscribeFromChat = null;
     }
 
-    // Clear previous messages
-    messagesContainer.innerHTML = '<div class="system-message">Chat established securely. Start typing!</div>';
+    db.collection('chats').doc(chatId).get().then(doc => {
+        if (doc.exists) {
+            const data = doc.data();
+            currentPartnerLanguage = (data.lang1 === currentMyLanguage) ? data.lang2 : data.lang1;
+            
+            messagesContainer.innerHTML = `<div class="system-message">Chat established securely. Partner speaks: **${currentPartnerLanguage}**.</div>`;
 
-    // Firebase Firestore function to listen for real-time updates
-    unsubscribeFromChat = db.collection('chats').doc(chatId).collection('messages')
-        .orderBy('timestamp')
-        .onSnapshot(snapshot => {
-            snapshot.docChanges().forEach(change => {
-                if (change.type === 'added') {
-                    const messageData = change.doc.data();
-                    displayMessage(messageData);
-                }
-            });
-            // Scroll to the bottom to see the newest message
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        });
+            unsubscribeFromChat = db.collection('chats').doc(chatId).collection('messages')
+                .orderBy('timestamp')
+                .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === 'added') {
+                            const messageData = change.doc.data();
+                            displayMessage(messageData);
+                        }
+                    });
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                });
+        }
+    });
 }
 
 /**
- * Displays a single message in the UI, handling decryption and future translation.
+ * TRIAL LOGIC: Displays the decrypted original message only.
+ * This proves the security and real-time flow without translation.
  */
-function displayMessage(data) {
-    // Determine if the message is from me or the other person
+async function displayMessage(data) {
     const isMe = data.senderId === currentUserID;
     
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
     messageDiv.classList.add(isMe ? 'message-me' : 'message-them');
 
-    // 1. DECRYPT the message content
     const originalText = decryptMessage(data.encryptedText);
     
-    // 2. TRANSLATION (Placeholder for now)
-    let translatedText = originalText; // Currently, translatedText is the same as originalText
+    // Display the original message text directly.
+    const displayedText = `[NO TRANSLATION - Spark Trial] ${originalText}`;
     
-    // HTML structure for the message bubble
     messageDiv.innerHTML = `
         <p class="translated-text">
-            ${translatedText}
+            ${displayedText}
         </p>
-        <button class="show-original-button" data-original="${originalText}" style="font-size: 0.7em; margin-top: 5px; background: none; border: none; color: #f1c40f; cursor: pointer;">
+        <button class="show-original-button" data-original="${originalText}" data-translated="${originalText}" style="font-size: 0.7em; margin-top: 5px; background: none; border: none; color: #f1c40f; cursor: pointer;">
             Show Original
         </button>
         <span class="timestamp">${new Date(data.timestamp.toDate()).toLocaleTimeString()}</span>
     `;
-
     messagesContainer.appendChild(messageDiv);
 }
 
 
-// --- FIREBASE AUTH/CHAT HANDLERS ---
+// --- FIREBASE AUTH/CHAT HANDLERS (Same as before) ---
+async function handleSaveCatalogue() {
+    const catalogueText = catalogueTextInput.value.trim();
+    if (!catalogueText) {
+        alert("Please enter your catalogue or business information.");
+        return;
+    }
+    
+    try {
+        await db.collection('catalogues').doc(currentUserID).set({
+            text: catalogueText,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        alert("Catalogue saved successfully! You can now start chatting.");
+
+        businessSetupScreen.style.display = 'none';
+        chatScreen.style.display = 'flex';
+        chatInput.disabled = false;
+        sendButton.disabled = false;
+        chatInput.focus();
+
+    } catch (error) {
+        alert(`Catalogue Save Error: ${error.message}`);
+        console.error("Catalogue Save Error:", error);
+    }
+}
 
 async function handleRegister() {
     const data = validateSetup();
@@ -178,7 +212,7 @@ async function handleRegister() {
         });
 
         alert(`Registration successful! Logged in as: ${data.email}.`);
-        switchToChatScreen(data.myLanguage);
+        checkUserTypeAndSwitchScreen(data.myLanguage, data.userType);
 
     } catch (error) {
         alert(`Registration Error: ${error.message}`);
@@ -198,7 +232,7 @@ async function handleLogin() {
         if (userDoc.exists) {
             const userData = userDoc.data();
             alert(`Welcome back, ${userData.email}!`);
-            switchToChatScreen(userData.myLanguage);
+            checkUserTypeAndSwitchScreen(userData.myLanguage, userData.userType);
         } else {
             alert("User data missing. Please register again.");
             await auth.signOut();
@@ -217,12 +251,13 @@ function handleLogout() {
         currentUserID = null;
         currentMyLanguage = null;
         currentChatId = null; 
+        currentPartnerLanguage = null;
+        currentUserType = null;
         
-        // UI Switch
         chatScreen.style.display = 'none';
+        businessSetupScreen.style.display = 'none';
         setupScreen.style.display = 'flex'; 
 
-        // Reset inputs
         userEmailInput.value = '';
         userPasswordInput.value = '';
         userTypeSelect.value = '';
@@ -230,16 +265,13 @@ function handleLogout() {
         chatInput.disabled = true;
         sendButton.disabled = true;
         
-        messagesContainer.innerHTML = ''; // Clear messages
+        messagesContainer.innerHTML = '';
         alert("You have been logged out securely.");
     }).catch((error) => {
         console.error("Logout Error:", error);
     });
 }
 
-/**
- * Finds or creates a chat document between the current user and the target user.
- */
 async function handleStartConversation() {
     const targetEmail = targetEmailInput.value.trim();
     if (!targetEmail) {
@@ -251,7 +283,6 @@ async function handleStartConversation() {
         return;
     }
 
-    // 1. Find the target user's UID (Required for security rules)
     const targetUserQuery = await db.collection('users').where('email', '==', targetEmail).limit(1).get();
 
     if (targetUserQuery.empty) {
@@ -262,11 +293,9 @@ async function handleStartConversation() {
     const targetUserId = targetUserQuery.docs[0].id;
     const targetUserData = targetUserQuery.docs[0].data();
     
-    // 2. Generate a unique, sorted chat ID
     const participants = [currentUserID, targetUserId].sort();
     const chatID = participants.join('_');
     
-    // 3. Create or update the chat document
     await db.collection('chats').doc(chatID).set({
         participants: participants,
         lang1: currentMyLanguage, 
@@ -274,19 +303,15 @@ async function handleStartConversation() {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // 4. Set the new active chat and start listening
     currentChatId = chatID;
     listenToChat(currentChatId);
     
-    newChatContainer.style.display = 'none'; // Hide the search box
-    targetEmailInput.value = ''; // Clear input
-    alert(`Chat started with ${targetUserData.email}. Messages will be translated from ${currentMyLanguage} to ${targetUserData.myLanguage}.`);
+    newChatContainer.style.display = 'none';
+    targetEmailInput.value = '';
+    alert(`Chat started with ${targetUserData.email}. Messages will be encrypted/decrypted, but NO real-time translation is active on the Spark Plan.`);
 }
 
 
-/**
- * Sends a message to the active chat.
- */
 async function handleSendMessage() {
     if (!currentChatId) {
         alert("Please start a new chat before sending a message.");
@@ -296,10 +321,8 @@ async function handleSendMessage() {
     const messageText = chatInput.value.trim();
     if (messageText === '') return;
 
-    // 1. ENCRYPT the original message
     const encrypted = encryptMessage(messageText);
 
-    // 2. Prepare the message object
     const message = {
         senderId: currentUserID,
         encryptedText: encrypted,
@@ -307,10 +330,8 @@ async function handleSendMessage() {
     };
 
     try {
-        // 3. Save the encrypted message to Firestore
         await db.collection('chats').doc(currentChatId).collection('messages').add(message);
-        
-        chatInput.value = ''; // Clear the input box
+        chatInput.value = '';
     } catch (error) {
         alert(`Send Message Error: ${error.message}`);
         console.error("Send Message Error:", error);
@@ -318,15 +339,15 @@ async function handleSendMessage() {
 }
 
 
-// --- ATTACH EVENT LISTENERS ---
+// --- ATTACH EVENT LISTENERS (Same as before) ---
 registerButton.addEventListener('click', handleRegister);
 loginButton.addEventListener('click', handleLogin);
 logoutButton.addEventListener('click', handleLogout);
 newChatButton.addEventListener('click', toggleNewChatInput);
 startConversationButton.addEventListener('click', handleStartConversation);
 sendButton.addEventListener('click', handleSendMessage);
+saveCatalogueButton.addEventListener('click', handleSaveCatalogue);
 
-// Pressing Enter key in the chat input should also send the message
 chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         handleSendMessage();
@@ -334,23 +355,24 @@ chatInput.addEventListener('keypress', (e) => {
 });
 
 
-// --- INITIAL CHECK: Check if a user is already logged in (Persistent Session) ---
+// --- INITIAL CHECK (Same as before) ---
 auth.onAuthStateChanged(user => {
     if (user) {
         db.collection('users').doc(user.uid).get().then(userDoc => {
             if (userDoc.exists) {
-                switchToChatScreen(userDoc.data().myLanguage); 
+                const userData = userDoc.data();
                 currentUserID = user.uid;
+                checkUserTypeAndSwitchScreen(userData.myLanguage, userData.userType); 
             }
         });
     } else {
         setupScreen.style.display = 'flex';
         chatScreen.style.display = 'none';
+        businessSetupScreen.style.display = 'none';
     }
 });
 
-// --- EVENT LISTENER FOR SHOW ORIGINAL BUTTONS ---
-// Since messages are added dynamically, we use event delegation on the container
+// --- EVENT LISTENER FOR SHOW ORIGINAL BUTTONS (Updated for trial) ---
 messagesContainer.addEventListener('click', (event) => {
     if (event.target.classList.contains('show-original-button')) {
         const button = event.target;
@@ -358,12 +380,11 @@ messagesContainer.addEventListener('click', (event) => {
         const translatedParagraph = button.previousElementSibling;
         
         if (button.textContent === 'Show Original') {
-            // Display the original message
             translatedParagraph.textContent = originalText;
-            button.textContent = 'Show Translated';
+            button.textContent = 'Show Original (Encrypted)';
         } else {
-            // Re-display the translated message (currently the original text)
-            translatedParagraph.textContent = originalText; 
+            // Revert back to the trial message display
+            translatedParagraph.textContent = `[NO TRANSLATION - Spark Trial] ${originalText}`;
             button.textContent = 'Show Original';
         }
     }
