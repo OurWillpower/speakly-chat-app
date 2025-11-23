@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Speakly Chat</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      body { margin: 0; padding-bottom: 3rem; font-family: sans-serif; background-color: #f0f2f5; }
+      #messages { list-style-type: none; margin: 0; padding: 1rem; }
+      #messages li { padding: 0.5rem 1rem; margin-bottom: 0.5rem; background: white; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+      #form { background: #fff; padding: 0.5rem; position: fixed; bottom: 0; width: 100%; display: flex; box-shadow: 0 -2px 5px rgba(0,0,0,0.05); }
+      #input { flex-grow: 1; border: 1px solid #ccc; border-radius: 20px; padding: 0.5rem 1rem; outline: none; }
+      #btn { background: #0084ff; border: none; padding: 0 1.5rem; margin-left: 0.5rem; border-radius: 20px; color: white; font-weight: bold; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <ul id="messages"></ul>
+    <form id="form" action="">
+      <input id="input" autocomplete="off" placeholder="Type a message..." /><button id="btn">Send</button>
+    </form>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      var socket = io();
+      var messages = document.getElementById('messages');
+      var form = document.getElementById('form');
+      var input = document.getElementById('input');
+
+      // Ask for name
+      var myName = prompt("Enter your name for the chat:") || "Guest";
+
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (input.value) {
+          // Send name and text
+          socket.emit('chat message', { user: myName, text: input.value });
+          input.value = '';
+        }
+      });
+
+      socket.on('chat message', function(data) {
+        var item = document.createElement('li');
+        item.innerHTML = `<strong>${data.user}:</strong> ${data.text}`;
+        messages.appendChild(item);
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+    </script>
+  </body>
+</html>
